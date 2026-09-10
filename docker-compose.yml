@@ -1,0 +1,13 @@
+services:
+  pos_parser_bot:
+    build: .
+    container_name: posnext_solds_parser
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./venues.txt:/app/venues.txt
+      - ./reports:/app/reports
+      - ./session.json:/app/session.json
+      - ./allowed_users.json:/app/allowed_users.json
+      - ./parser.log:/app/parser.log
