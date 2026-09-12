@@ -10,17 +10,20 @@ router = Router()
 
 
 def get_settings_text() -> str:
-    from_lbl = app_state.from_date if app_state.from_date else "Не задано (Все события)"
-    to_lbl = app_state.to_date if app_state.to_date else "Не задано (Все события)"
+    from_lbl = f"✅ <code>{app_state.from_date}</code>" if app_state.from_date else "❌ Не задана (Все события)"
+    to_lbl = f"✅ <code>{app_state.to_date}</code>" if app_state.to_date else "❌ Не задана (Все события)"
 
     text = (
-        f"⚙️ <b>Настройки параметров парсера</b>\n\n"
-        f"• <b>Дата 'От':</b> <code>{from_lbl}</code>\n"
-        f"• <b>Дата 'До':</b> <code>{to_lbl}</code>\n"
-        f"• <b>Минимум Sold:</b> <b>{app_state.min_solds}</b> шт.\n\n"
-        f"Нажмите на соответствующую кнопку для изменения:"
+        f"⚙️ <b>НАСТРОЙКИ ПАРАМЕТРОВ ФИЛЬТРАЦИИ</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"📅 Дата «От»: {from_lbl}\n"
+        f"📅 Дата «До»: {to_lbl}\n"
+        f"🔥 Порог Sold: <b>от {app_state.min_solds} шт.</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"💡 <i>Нажмите кнопку ниже, чтобы изменить нужное значение:</i>"
     )
     return text
+
 
 
 @router.callback_query(F.data == "open_settings")

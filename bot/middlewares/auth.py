@@ -32,7 +32,14 @@ class AuthMiddleware(BaseMiddleware):
             elif isinstance(event, CallbackQuery):
                 await event.answer("Доступ запрещен", show_alert=True)
                 if event.message:
-                    await event.message.answer(denial_text, parse_mode="HTML")
             return
+
+        # Обновляем профиль пользователя при активности
+        security_manager.update_user_info(
+            user_id=user_id,
+            first_name=user.first_name,
+            last_name=user.last_name,
+            username=user.username
+        )
 
         return await handler(event, data)

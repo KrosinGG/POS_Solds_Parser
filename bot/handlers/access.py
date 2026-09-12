@@ -11,12 +11,15 @@ router = Router()
 @router.callback_query(F.data == "open_access")
 async def callback_open_access(callback: CallbackQuery):
     if not security_manager.is_admin(callback.from_user.id):
-        await callback.answer("Только администратор имеет доступ к этому разделу", show_alert=True)
+        await callback.answer("Только главный администратор имеет доступ к этому разделу", show_alert=True)
         return
 
+    users_count = len(security_manager.get_allowed_users())
     text = (
-        "👥 <b>Управление доступом пользователей</b>\n\n"
-        "Здесь вы можете добавить Telegram ID коллег, которым будет разрешен доступ к боту и парсеру."
+        "👥 <b>УПРАВЛЕНИЕ ДОСТУПОМ ПОЛЬЗОВАТЕЛЕЙ</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"📊 Авторизовано пользователей: <b>{users_count} чел.</b>\n\n"
+        "Здесь вы можете добавить или удалить Telegram ID коллег, которым разрешено использовать парсер."
     )
     await callback.message.edit_text(text, reply_markup=get_access_keyboard(), parse_mode="HTML")
     await callback.answer()
@@ -28,17 +31,38 @@ async def callback_list_users(callback: CallbackQuery):
         await callback.answer("Доступ запрещен", show_alert=True)
         return
 
-    users = security_manager.get_allowed_users()
-    lines = []
-    for uid in users:
-        badge = " (👑 Главный администратор)" if security_manager.is_admin(uid) else ""
-        lines.append(f"• <code>{uid}</code>{badge}")
+    users_detailed = security_manager.get_users_detailed()
+    user_blocks = []
 
-    users_text = "\n".join(lines) if lines else "Список пуст."
+    for idx, u in enumerate(users_detailed, start=1):
+        uid = u["user_id"]
+        is_adm = security_manager.is_admin(uid)
+        role_title = "👑 <b>Главный администратор</b>" if is_adm else "👤 <b>Доверенный пользователь</b>"
+
+        # Имя и фамилия
+        f_name = u.get("first_name", "").strip()
+        l_name = u.get("last_name", "").strip()
+        full_name = f"{f_name} {l_name}".strip() if (f_name or l_name) else "<i>(будет определено при входе)</i>"
+
+        # Юзернейм
+        username = u.get("username", "").strip()
+        username_str = f"@{username}" if username else "<i>не указан</i>"
+
+        block = (
+            f"<b>{idx}.</b> {role_title}\n"
+            f"   👤 Имя / Фамилия: <b>{full_name}</b>\n"
+            f"   🏷 Юзернейм: <b>{username_str}</b>\n"
+            f"   🆔 Telegram ID: <code>{uid}</code>"
+        )
+        user_blocks.append(block)
+
+    users_text = "\n\n".join(user_blocks) if user_blocks else "Список пуст."
     text = (
-        f"📋 <b>Список авторизованных Telegram ID:</b>\n\n"
-        f"{users_text}\n\n"
-        f"Всего пользователей: <b>{len(users)}</b>"
+        f"👥 <b>СПИСОК АВТОРИЗОВАННЫХ ПОЛЬЗОВАТЕЛЕЙ</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"{users_text}\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"📊 Всего пользователей: <b>{len(users_detailed)}</b>"
     )
     await callback.message.edit_text(text, reply_markup=get_back_keyboard("open_access"), parse_mode="HTML")
     await callback.answer()
@@ -52,9 +76,10 @@ async def callback_add_user(callback: CallbackQuery, state: FSMContext):
 
     await state.set_state(AccessStates.waiting_for_add_user_id)
     text = (
-        "➕ <b>Добавление пользователя</b>\n\n"
-        "Отправьте числовой <b>Telegram ID</b> пользователя (например, <code>987654321</code>):\n"
-        "<i>Узнать свой ID пользователь может в боте @userinfobot</i>"
+        "➕ <b>ДОБАВЛЕНИЕ НОВОГО ПОЛЬЗОВАТЕЛЯ</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "Отправьте числовой <b>Telegram ID</b> пользователя (например, <code>987654321</code>):\n\n"
+        "💡 <i>Узнать свой Telegram ID пользователь может в боте @userinfobot</i>"
     )
     await callback.message.edit_text(text, reply_markup=get_cancel_keyboard(), parse_mode="HTML")
     await callback.answer()
@@ -73,15 +98,47 @@ async def process_add_user(message: Message, state: FSMContext):
         await message.answer("❌ Введите корректный числовой Telegram ID (только цифры):", reply_markup=get_cancel_keyboard())
         return
 
-    success = security_manager.add_user(new_uid)
+    # Пробуем запросить данные профиля через Telegram API
+    first_name = ""
+    last_name = ""
+    username = ""
+    try:
+        chat = await message.bot.get_chat(new_uid)
+        first_name = chat.first_name or ""
+        last_name = chat.last_name or ""
+        username = chat.username or ""
+    except Exception:
+        pass
+
+    success = security_manager.add_user(
+        user_id=new_uid,
+        first_name=first_name,
+        last_name=last_name,
+        username=username
+    )
     await state.clear()
 
-    if success:
-        await message.answer(f"✅ Пользователь с Telegram ID <code>{new_uid}</code> успешно добавлен в список разрешенных!", parse_mode="HTML")
-    else:
-        await message.answer(f"ℹ️ Пользователь с Telegram ID <code>{new_uid}</code> уже есть в списке разрешенных.", parse_mode="HTML")
+    full_name = f"{first_name} {last_name}".strip() if (first_name or last_name) else "Ожидает первого входа"
+    username_display = f"@{username}" if username else "Не указан"
 
-    text = "👥 <b>Управление доступом пользователей</b>"
+    if success:
+        result_msg = (
+            f"✅ <b>Пользователь успешно добавлен!</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"👤 Имя / Фамилия: <b>{full_name}</b>\n"
+            f"🏷 Юзернейм: <b>{username_display}</b>\n"
+            f"🆔 Telegram ID: <code>{new_uid}</code>"
+        )
+    else:
+        result_msg = f"ℹ️ Пользователь с Telegram ID <code>{new_uid}</code> уже имеет доступ."
+
+    await message.answer(result_msg, parse_mode="HTML")
+
+    text = (
+        "👥 <b>УПРАВЛЕНИЕ ДОСТУПОМ ПОЛЬЗОВАТЕЛЕЙ</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "Выберите действие ниже:"
+    )
     await message.answer(text, reply_markup=get_access_keyboard(), parse_mode="HTML")
 
 
@@ -93,8 +150,9 @@ async def callback_remove_user(callback: CallbackQuery, state: FSMContext):
 
     await state.set_state(AccessStates.waiting_for_remove_user_id)
     text = (
-        "➖ <b>Удаление пользователя</b>\n\n"
-        "Отправьте числовой <b>Telegram ID</b>, у которого нужно отозвать доступ:"
+        "➖ <b>ОТЗЫВ ДОСТУПА ПОЛЬЗОВАТЕЛЯ</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "Отправьте числовой <b>Telegram ID</b>, у которого нужно отозвать доступ к боту:"
     )
     await callback.message.edit_text(text, reply_markup=get_cancel_keyboard(), parse_mode="HTML")
     await callback.answer()
@@ -119,5 +177,9 @@ async def process_remove_user(message: Message, state: FSMContext):
     else:
         await message.answer(f"❌ Не удалось удалить <code>{rem_uid}</code> (пользователь не найден или является главным администратором).", parse_mode="HTML")
 
-    text = "👥 <b>Управление доступом пользователей</b>"
+    text = (
+        "👥 <b>УПРАВЛЕНИЕ ДОСТУПОМ ПОЛЬЗОВАТЕЛЕЙ</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "Выберите действие ниже:"
+    )
     await message.answer(text, reply_markup=get_access_keyboard(), parse_mode="HTML")
